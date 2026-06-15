@@ -10,7 +10,11 @@
     <style>
         body { font-family: 'Noto Sans KR', sans-serif; background-color: #f0fdf4; }
         .player-card.selected { border: 2px solid #16a34a; background-color: #dcfce7; }
+        .player-card.teamed { opacity: 0.5; filter: grayscale(50%); pointer-events: none; }
         .player-card.eliminated { opacity: 0.5; filter: grayscale(100%); pointer-events: none; }
+        .team-card.selected { border: 2px solid #2563eb; background-color: #dbeafe; }
+        .team-card.eliminated { opacity: 0.5; filter: grayscale(100%); pointer-events: none; }
+        
         /* Custom Scrollbar */
         ::-webkit-scrollbar { width: 8px; }
         ::-webkit-scrollbar-track { background: #f1f1f1; border-radius: 4px; }
@@ -19,7 +23,7 @@
 
         /* Badminton Court UI CSS */
         .badminton-court {
-            background-color: #16a34a; /* bg-green-600 */
+            background-color: #16a34a; 
             border: 2px solid white;
             position: relative;
             overflow: hidden;
@@ -80,18 +84,19 @@
             <div class="bg-white rounded-xl shadow p-4 border-t-4 border-green-500">
                 <h2 class="text-md font-bold mb-2 border-b pb-2"><i class="fa-solid fa-gear"></i> 대회 규정 설정</h2>
                 <select id="tournamentMode" onchange="changeMode()" class="w-full text-sm border-gray-300 rounded-md shadow-sm p-2 border focus:border-green-500 focus:ring focus:ring-green-200">
-                    <option value="points">개인별 득점 합산 (리그제)</option>
-                    <option value="tournament">토너먼트 (서바이벌)</option>
+                    <option value="individual_points">개인별 득점 합산 (자유 파트너)</option>
+                    <option value="team_league">고정 조별 리그전 (팀 득점 합산)</option>
+                    <option value="tournament">개인 토너먼트 (서바이벌)</option>
                 </select>
             </div>
 
             <!-- Participants List -->
-            <div class="bg-white rounded-xl shadow p-4 flex-grow flex flex-col border-t-4 border-green-500 max-h-[700px]">
+            <div class="bg-white rounded-xl shadow p-4 flex-grow flex flex-col border-t-4 border-green-500 max-h-[500px]">
                 <div class="flex justify-between items-center mb-2 border-b pb-2">
                     <h2 class="text-md font-bold"><i class="fa-solid fa-users"></i> 참가자 현황</h2>
                     <span id="participantCount" class="text-xs bg-green-100 text-green-800 py-1 px-2 rounded-full font-bold">0명</span>
                 </div>
-                <p class="text-[11px] text-gray-500 mb-3">* 출전할 선수 4명을 순서대로 클릭하세요.<br>(1,2번째: 1팀 / 3,4번째: 2팀)</p>
+                <p id="participantInstruction" class="text-[11px] text-gray-500 mb-3">* 출전할 선수 4명을 순서대로 클릭하세요.<br> - 수동: 1,2번째(1팀) / 3,4번째(2팀)<br> - 자동: 4명 선택 후 [자동 대진] 클릭</p>
                 
                 <div id="loadingIndicator" class="text-center text-gray-500 py-4 text-sm">
                     <i class="fa-solid fa-spinner fa-spin text-xl mb-2"></i><br>데이터 로드 중...
@@ -101,9 +106,24 @@
                     <!-- Participant Cards injected here -->
                 </div>
                 
-                <button onclick="clearSelection()" class="w-full bg-gray-200 hover:bg-gray-300 text-gray-700 font-bold py-2 rounded-md transition shadow text-sm">
-                    <i class="fa-solid fa-rotate-right"></i> 선수 선택 초기화
+                <button onclick="clearSelection()" class="w-full bg-gray-200 hover:bg-gray-300 text-gray-700 font-bold py-2 rounded-md transition shadow text-sm mb-2">
+                    <i class="fa-solid fa-rotate-right"></i> 선택 초기화
                 </button>
+                <button id="createTeamBtn" onclick="createTeam()" style="display: none;" class="w-full bg-indigo-600 hover:bg-indigo-700 text-white font-bold py-2 rounded-md transition shadow text-sm">
+                    <i class="fa-solid fa-link"></i> 선택한 2명으로 조 결성
+                </button>
+            </div>
+
+            <!-- Teams List (Only for team_league mode) -->
+            <div id="teamSection" style="display: none;" class="bg-white rounded-xl shadow p-4 border-t-4 border-indigo-500 flex flex-col max-h-[300px]">
+                <div class="flex justify-between items-center mb-2 border-b pb-2">
+                    <h2 class="text-md font-bold"><i class="fa-solid fa-user-group"></i> 편성된 조 현황</h2>
+                    <span id="teamCount" class="text-xs bg-indigo-100 text-indigo-800 py-1 px-2 rounded-full font-bold">0팀</span>
+                </div>
+                <p class="text-[11px] text-gray-500 mb-2">* 경기할 두 조를 선택하세요.</p>
+                <div id="teamList" class="flex-grow overflow-y-auto space-y-2 pr-1">
+                    <div class="text-center text-gray-400 text-xs py-4 italic">편성된 조가 없습니다.</div>
+                </div>
             </div>
         </div>
 
@@ -122,33 +142,38 @@
                     
                     <!-- Team 1 (Left) -->
                     <div class="w-1/2 flex flex-col justify-around p-1 z-20">
-                        <div id="builder-t1p1" class="text-white text-center w-full transition-all flex flex-col items-center">
+                        <div id="builder-t1p1" class="text-white text-center w-full transition-all flex flex-col items-center justify-center">
                             <i class="fa-regular fa-user text-2xl mb-1 opacity-50"></i>
-                            <p class="text-[10px] opacity-75">1팀 - 선수 1</p>
+                            <p class="text-[10px] opacity-75">1팀 - 선택</p>
                         </div>
-                        <div id="builder-t1p2" class="text-white text-center w-full transition-all flex flex-col items-center">
+                        <div id="builder-t1p2" class="text-white text-center w-full transition-all flex flex-col items-center justify-center">
                             <i class="fa-regular fa-user text-2xl mb-1 opacity-50"></i>
-                            <p class="text-[10px] opacity-75">1팀 - 선수 2</p>
+                            <p class="text-[10px] opacity-75">1팀 - 파트너</p>
                         </div>
                     </div>
                     <!-- Team 2 (Right) -->
                     <div class="w-1/2 flex flex-col justify-around p-1 z-20">
-                        <div id="builder-t2p1" class="text-white text-center w-full transition-all flex flex-col items-center">
+                        <div id="builder-t2p1" class="text-white text-center w-full transition-all flex flex-col items-center justify-center">
                             <i class="fa-regular fa-user text-2xl mb-1 opacity-50"></i>
-                            <p class="text-[10px] opacity-75">2팀 - 선수 1</p>
+                            <p class="text-[10px] opacity-75">2팀 - 선택</p>
                         </div>
-                        <div id="builder-t2p2" class="text-white text-center w-full transition-all flex flex-col items-center">
+                        <div id="builder-t2p2" class="text-white text-center w-full transition-all flex flex-col items-center justify-center">
                             <i class="fa-regular fa-user text-2xl mb-1 opacity-50"></i>
-                            <p class="text-[10px] opacity-75">2팀 - 선수 2</p>
+                            <p class="text-[10px] opacity-75">2팀 - 파트너</p>
                         </div>
                     </div>
                 </div>
 
                 <div class="flex flex-col sm:flex-row gap-2 mb-2">
-                    <input type="text" id="roundInput" placeholder="라운드 (예: 예선 1R)" class="w-full sm:w-1/3 text-sm border-gray-300 rounded-md shadow-sm p-2 border focus:border-blue-500 text-center">
-                    <input type="number" id="courtInput" placeholder="코트 번호 (예: 1)" class="w-full sm:w-1/3 text-sm border-gray-300 rounded-md shadow-sm p-2 border focus:border-blue-500 text-center">
-                    <button onclick="createMatch()" class="w-full sm:w-1/3 bg-blue-600 hover:bg-blue-700 text-white font-bold py-2 rounded-md transition shadow flex items-center justify-center gap-2">
-                        <i class="fa-solid fa-plus"></i> 대진표 추가
+                    <input type="text" id="roundInput" placeholder="조/라운드 이름 (예: 예선 1R)" class="w-full sm:w-1/2 text-sm border-gray-300 rounded-md shadow-sm p-2 border focus:border-blue-500 text-center">
+                    <input type="text" id="courtInput" placeholder="코트 번호 (예: 1)" class="w-full sm:w-1/2 text-sm border-gray-300 rounded-md shadow-sm p-2 border focus:border-blue-500 text-center">
+                </div>
+                <div class="flex flex-col sm:flex-row gap-2">
+                    <button onclick="createMatch()" class="w-full sm:w-1/2 bg-blue-500 hover:bg-blue-600 text-white font-bold py-2 rounded-md transition shadow flex items-center justify-center gap-2 text-sm">
+                        <i class="fa-solid fa-plus"></i> 수동 추가 (1경기)
+                    </button>
+                    <button id="autoMatchBtn" onclick="createAutoMatches()" class="w-full sm:w-1/2 bg-purple-600 hover:bg-purple-700 text-white font-bold py-2 rounded-md transition shadow flex items-center justify-center gap-2 text-sm">
+                        <i class="fa-solid fa-magic"></i> 4인 자동 대진 (3경기)
                     </button>
                 </div>
             </div>
@@ -157,7 +182,7 @@
             <div class="bg-white rounded-xl shadow p-4 border-t-4 border-purple-500 min-h-[400px]">
                 <h2 class="text-md font-bold mb-3 border-b pb-2"><i class="fa-solid fa-table-list"></i> 진행 및 예정된 경기 현황</h2>
                 <div id="matchList" class="grid grid-cols-1 md:grid-cols-2 gap-4">
-                    <div class="text-gray-400 italic col-span-full text-center py-10 text-sm">생성된 경기가 없습니다. 선수 4명을 선택하여 대진표를 추가해주세요.</div>
+                    <div class="text-gray-400 italic col-span-full text-center py-10 text-sm">생성된 경기가 없습니다. 대진표를 추가해주세요.</div>
                 </div>
             </div>
         </div>
@@ -167,14 +192,14 @@
             
             <!-- Leaderboard / Tournament Status -->
             <div class="bg-white rounded-xl shadow p-4 border-t-4 border-yellow-500 min-h-[500px]">
-                <h2 class="text-md font-bold mb-3 border-b pb-2" id="standingsTitle"><i class="fa-solid fa-trophy text-yellow-500"></i> 개인별 순위 (득점 합산)</h2>
+                <h2 class="text-md font-bold mb-3 border-b pb-2" id="standingsTitle"><i class="fa-solid fa-trophy text-yellow-500"></i> 순위표 (득점 합산)</h2>
                 <div class="overflow-x-auto">
                     <table class="min-w-full divide-y divide-gray-200 text-sm text-center">
                         <thead class="bg-gray-50">
                             <tr>
                                 <th class="px-2 py-2 font-medium text-gray-500">순위</th>
-                                <th class="px-2 py-2 font-medium text-gray-500">이름</th>
-                                <th class="px-2 py-2 font-medium text-gray-500">급수</th>
+                                <th class="px-2 py-2 font-medium text-gray-500" id="lbNameHeader">이름</th>
+                                <th class="px-2 py-2 font-medium text-gray-500">정보</th>
                                 <th class="px-2 py-2 font-medium text-gray-500">경기수</th>
                                 <th class="px-2 py-2 font-medium text-gray-500">총 득점</th>
                             </tr>
@@ -238,11 +263,14 @@
         const SHEET_ID = '1pbAQMAbyG0gNJYXCh7zIj4esMPaFVH2NkluFLyY7qUQ';
         const STATE = {
             participants: [],
+            teams: [],           // 조별 리그전에 사용되는 팀(조) 배열
             matches: [],         
-            mode: 'points',      
+            mode: 'individual_points', // individual_points, team_league, tournament
             isAdmin: false,
             adminPassword: '1234',
-            selectedPlayers: [], // 대진표 구성을 위해 선택된 4명
+            selectedPlayers: [], // 선택된 선수 ID 배열
+            selectedTeams: [],   // 선택된 조(팀) ID 배열
+            teamIdCounter: 1,
             matchIdCounter: 1
         };
 
@@ -297,12 +325,10 @@
             const rows = csvText.split(/\r?\n/).map(row => row.split(',').map(val => val.replace(/^"|"$/g, '').trim()));
             STATE.participants = [];
 
-            // 1. 관리자 인증번호 (F2 셀)
             if (rows.length > 1 && rows[1].length > 5 && rows[1][5]) {
                 STATE.adminPassword = rows[1][5];
             }
 
-            // 2. 참가자 목록 (A~E열, E열이 TRUE 인 사람만)
             for (let i = 1; i < rows.length; i++) {
                 const row = rows[i];
                 if (row.length >= 5 && row[0]) {
@@ -316,7 +342,8 @@
                             level: row[3] || '-',
                             totalPoints: 0,
                             matchesPlayed: 0,
-                            eliminated: false
+                            eliminated: false,
+                            hasTeam: false // team_league 용도
                         });
                     }
                 }
@@ -338,15 +365,250 @@
             document.getElementById('participantCount').innerText = '0명';
         }
 
-        // --- Render System ---
+        // --- Core Application Logic ---
+
+        function changeMode() {
+            if (STATE.matches.length > 0) {
+                if(!confirm("대회 방식을 변경하면 기존 대진표 및 점수 기록이 모두 초기화됩니다. 변경하시겠습니까?")) {
+                    document.getElementById('tournamentMode').value = STATE.mode; // 롤백
+                    return;
+                }
+            }
+            
+            STATE.mode = document.getElementById('tournamentMode').value;
+            
+            // 데이터 완전 초기화
+            STATE.matches = [];
+            STATE.teams = [];
+            clearSelection();
+            STATE.participants.forEach(p => {
+                p.hasTeam = false;
+                p.totalPoints = 0;
+                p.matchesPlayed = 0;
+                p.eliminated = false;
+            });
+
+            // 모드별 UI 전환
+            const isTeamMode = (STATE.mode === 'team_league');
+            document.getElementById('teamSection').style.display = isTeamMode ? 'flex' : 'none';
+            document.getElementById('createTeamBtn').style.display = isTeamMode ? 'block' : 'none';
+            document.getElementById('participantInstruction').innerHTML = isTeamMode 
+                ? '* 2명을 클릭하여 하나의 조(팀)로 결성하세요.' 
+                : '* 출전할 선수 4명을 순서대로 클릭하세요.<br> - 수동: 1,2번째(1팀) / 3,4번째(2팀)<br> - 자동: 4명 선택 후 [자동 대진] 클릭';
+            
+            document.getElementById('autoMatchBtn').innerHTML = isTeamMode
+                ? '<i class="fa-solid fa-magic"></i> 편성된 풀리그 생성'
+                : '<i class="fa-solid fa-magic"></i> 4인 자동 대진 (3경기)';
+
+            renderAll();
+            showMessage(`방식이 변경되었습니다. 모든 기록이 초기화되었습니다.`, 'success');
+        }
+
+        function togglePlayerSelection(id) {
+            const player = STATE.participants.find(p => p.id === id);
+            
+            if (STATE.mode === 'tournament' && player.eliminated) {
+                showMessage("이미 탈락한 선수는 선택할 수 없습니다.", "error");
+                return;
+            }
+            // 팀 리그전 모드일 때 이미 팀이 있는 경우 선택 방지
+            if (STATE.mode === 'team_league' && player.hasTeam) {
+                return;
+            }
+
+            const index = STATE.selectedPlayers.indexOf(id);
+            const limit = (STATE.mode === 'team_league') ? 2 : 4;
+
+            if (index > -1) {
+                STATE.selectedPlayers.splice(index, 1);
+            } else {
+                if (STATE.selectedPlayers.length >= limit) {
+                    STATE.selectedPlayers.shift(); // 한도 초과 시 오래된 선택 해제
+                }
+                STATE.selectedPlayers.push(id);
+            }
+            
+            renderParticipants();
+            if (STATE.mode !== 'team_league') updateCourtVisual();
+        }
+
+        function toggleTeamSelection(teamId) {
+            const team = STATE.teams.find(t => t.id === teamId);
+            if (STATE.mode === 'tournament' && team.eliminated) {
+                showMessage("이미 탈락한 조는 선택할 수 없습니다.", "error");
+                return;
+            }
+
+            const index = STATE.selectedTeams.indexOf(teamId);
+            if (index > -1) {
+                STATE.selectedTeams.splice(index, 1);
+            } else {
+                if (STATE.selectedTeams.length >= 2) {
+                    STATE.selectedTeams.shift(); 
+                }
+                STATE.selectedTeams.push(teamId);
+            }
+            renderTeams();
+            updateCourtVisual();
+        }
+
+        function clearSelection() {
+            STATE.selectedPlayers = [];
+            STATE.selectedTeams = [];
+            renderParticipants();
+            renderTeams();
+            updateCourtVisual();
+        }
+
+        function createTeam() {
+            if (STATE.selectedPlayers.length !== 2) {
+                showMessage("명단에서 2명의 선수를 클릭하여 조를 구성해주세요.", "error");
+                return;
+            }
+            const p1 = STATE.participants.find(p => p.id === STATE.selectedPlayers[0]);
+            const p2 = STATE.participants.find(p => p.id === STATE.selectedPlayers[1]);
+
+            p1.hasTeam = true;
+            p2.hasTeam = true;
+
+            STATE.teams.push({
+                id: `t_${STATE.teamIdCounter++}`,
+                p1: p1,
+                p2: p2,
+                name: `${p1.name}·${p2.name} 조`,
+                matchesPlayed: 0,
+                totalPoints: 0,
+                eliminated: false
+            });
+
+            STATE.selectedPlayers = [];
+            renderAll();
+            showMessage("새로운 조가 결성되었습니다.", "success");
+        }
+
+        function deleteTeam(teamId) {
+            const team = STATE.teams.find(t => t.id === teamId);
+            if(!team) return;
+            
+            team.p1.hasTeam = false;
+            team.p2.hasTeam = false;
+            
+            STATE.teams = STATE.teams.filter(t => t.id !== teamId);
+            STATE.selectedTeams = STATE.selectedTeams.filter(id => id !== teamId);
+            
+            renderAll();
+            showMessage(`${team.name}가 해체되었습니다.`);
+        }
+
+        // 수동 경기(대진) 추가 (1경기)
+        function createMatch() {
+            const round = document.getElementById('roundInput').value || "일반경기";
+            const court = document.getElementById('courtInput').value || "?";
+
+            if (STATE.mode === 'team_league') {
+                if (STATE.selectedTeams.length !== 2) {
+                    showMessage("코트에 배치할 2개의 조를 선택해주세요.", "error");
+                    return;
+                }
+                STATE.matches.push({
+                    id: STATE.matchIdCounter++,
+                    type: 'team',
+                    t1Id: STATE.selectedTeams[0],
+                    t2Id: STATE.selectedTeams[1],
+                    round: round, court: court, score1: 0, score2: 0, completed: false
+                });
+            } else {
+                if (STATE.selectedPlayers.length !== 4) {
+                    showMessage("출전할 4명의 선수를 모두 선택해주세요.", "error");
+                    return;
+                }
+                STATE.matches.push({
+                    id: STATE.matchIdCounter++,
+                    type: 'individual',
+                    t1p1Id: STATE.selectedPlayers[0],
+                    t1p2Id: STATE.selectedPlayers[1],
+                    t2p1Id: STATE.selectedPlayers[2],
+                    t2p2Id: STATE.selectedPlayers[3],
+                    round: round, court: court, score1: 0, score2: 0, completed: false
+                });
+            }
+
+            clearSelection();
+            renderAll();
+            showMessage(`[${round}] 수동 대진표가 추가되었습니다.`, "success");
+        }
+
+        // 4인 자동 3경기 OR 모든 조 풀리그 생성
+        function createAutoMatches() {
+            const baseRound = document.getElementById('roundInput').value || "자동매칭";
+            const court = document.getElementById('courtInput').value || "?";
+
+            if (STATE.mode === 'team_league') {
+                if(STATE.teams.length < 2) {
+                    showMessage("풀리그를 진행하려면 최소 2개 이상의 조가 필요합니다.", "error");
+                    return;
+                }
+                let addedCount = 0;
+                for(let i=0; i<STATE.teams.length; i++) {
+                    for(let j=i+1; j<STATE.teams.length; j++) {
+                        STATE.matches.push({
+                            id: STATE.matchIdCounter++,
+                            type: 'team',
+                            t1Id: STATE.teams[i].id,
+                            t2Id: STATE.teams[j].id,
+                            round: `${baseRound}`,
+                            court: court, score1: 0, score2: 0, completed: false
+                        });
+                        addedCount++;
+                    }
+                }
+                clearSelection();
+                renderAll();
+                showMessage(`총 ${addedCount}경기의 풀리그 대진표가 한 번에 생성되었습니다.`, "success");
+                
+            } else {
+                if (STATE.selectedPlayers.length !== 4) {
+                    showMessage("자동 대진을 구성할 4명의 선수를 정확히 선택해주세요.", "error");
+                    return;
+                }
+                
+                const p = STATE.selectedPlayers; // [p0, p1, p2, p3]
+
+                // Match 1: p0 & p1 vs p2 & p3
+                STATE.matches.push({
+                    id: STATE.matchIdCounter++, type: 'individual',
+                    t1p1Id: p[0], t1p2Id: p[1], t2p1Id: p[2], t2p2Id: p[3],
+                    round: `${baseRound} (1/3)`, court: court, score1: 0, score2: 0, completed: false
+                });
+                // Match 2: p0 & p2 vs p1 & p3
+                STATE.matches.push({
+                    id: STATE.matchIdCounter++, type: 'individual',
+                    t1p1Id: p[0], t1p2Id: p[2], t2p1Id: p[1], t2p2Id: p[3],
+                    round: `${baseRound} (2/3)`, court: court, score1: 0, score2: 0, completed: false
+                });
+                // Match 3: p0 & p3 vs p1 & p2
+                STATE.matches.push({
+                    id: STATE.matchIdCounter++, type: 'individual',
+                    t1p1Id: p[0], t1p2Id: p[3], t2p1Id: p[1], t2p2Id: p[2],
+                    round: `${baseRound} (3/3)`, court: court, score1: 0, score2: 0, completed: false
+                });
+
+                clearSelection();
+                renderAll();
+                showMessage(`[${baseRound}] 4인 상호 대진표(3경기)가 자동 생성되었습니다.`, "success");
+            }
+        }
+
+
+        // --- Render Functions ---
         function renderAll() {
             renderParticipants();
+            if (STATE.mode === 'team_league') renderTeams();
             updateCourtVisual();
             renderMatches();
             renderLeaderboard();
         }
 
-        // 1. 참가자 렌더링
         function renderParticipants() {
             const listEl = document.getElementById('participantList');
             document.getElementById('participantCount').innerText = `${STATE.participants.length}명`;
@@ -356,16 +618,25 @@
                 STATE.participants.forEach(p => {
                     const isSelected = STATE.selectedPlayers.includes(p.id);
                     const isEliminated = STATE.mode === 'tournament' && p.eliminated;
+                    const isTeamed = STATE.mode === 'team_league' && p.hasTeam;
                     
                     const card = document.createElement('div');
-                    card.className = `player-card p-2 bg-gray-50 border rounded-lg transition flex justify-between items-center ${isEliminated ? 'eliminated' : 'cursor-pointer hover:bg-green-50'} ${isSelected ? 'selected' : ''}`;
-                    if (!isEliminated) card.onclick = () => togglePlayerSelection(p.id);
+                    let classNames = `player-card p-2 bg-gray-50 border rounded-lg transition flex justify-between items-center `;
+                    if (isEliminated) classNames += `eliminated `;
+                    else if (isTeamed) classNames += `teamed `;
+                    else classNames += `cursor-pointer hover:bg-green-50 `;
+                    if (isSelected) classNames += `selected `;
+                    
+                    card.className = classNames;
+                    if (!isEliminated && !isTeamed) card.onclick = () => togglePlayerSelection(p.id);
                     
                     let selectionBadge = '';
-                    if (isSelected) {
+                    if (isSelected && STATE.mode !== 'team_league') {
                         const selIndex = STATE.selectedPlayers.indexOf(p.id);
                         const teamNum = selIndex < 2 ? '1팀' : '2팀';
                         selectionBadge = `<span class="text-[10px] bg-green-600 text-white px-1.5 py-0.5 rounded ml-2">${teamNum}</span>`;
+                    } else if (isTeamed) {
+                        selectionBadge = `<span class="text-[10px] text-blue-500 font-normal ml-1">(편성됨)</span>`;
                     }
 
                     card.innerHTML = `
@@ -385,67 +656,126 @@
             }
         }
 
-        // 2. 코트 비주얼라이저 (4명 개인 단위)
-        function updateCourtVisual() {
-            const slots = [
-                document.getElementById('builder-t1p1'),
-                document.getElementById('builder-t1p2'),
-                document.getElementById('builder-t2p1'),
-                document.getElementById('builder-t2p2')
-            ];
+        function renderTeams() {
+            const listEl = document.getElementById('teamList');
+            document.getElementById('teamCount').innerText = `${STATE.teams.length}팀`;
             
-            const labels = ['1팀 - 선수 1', '1팀 - 선수 2', '2팀 - 선수 1', '2팀 - 선수 2'];
-            const colors = ['blue', 'blue', 'red', 'red'];
+            if (STATE.teams.length === 0) {
+                listEl.innerHTML = '<div class="text-center text-gray-400 text-xs py-4 italic">아직 편성된 조가 없습니다.<br>위에서 2명을 선택하여 조를 결성해주세요.</div>';
+                return;
+            }
 
-            for (let i = 0; i < 4; i++) {
-                const player = STATE.selectedPlayers[i] ? STATE.participants.find(p => p.id === STATE.selectedPlayers[i]) : null;
-                const color = colors[i];
+            listEl.innerHTML = '';
+            STATE.teams.forEach(t => {
+                const isSelected = STATE.selectedTeams.includes(t.id);
+                const isEliminated = STATE.mode === 'tournament' && t.eliminated;
                 
-                if (player) {
-                    slots[i].innerHTML = `
-                        <div class="bg-white text-${color}-800 font-black px-2 py-1 rounded shadow-lg border-2 border-${color}-200 w-full truncate text-sm mb-0.5">${player.name}</div>
-                        <div class="text-[9px] font-bold text-white bg-${color}-600 px-2 rounded-full truncate">${player.level}</div>
-                    `;
-                } else {
-                    slots[i].innerHTML = `
-                        <i class="fa-regular fa-user text-2xl mb-1 opacity-50"></i>
-                        <p class="text-[10px] opacity-75">${labels[i]}</p>
-                    `;
-                }
+                const card = document.createElement('div');
+                card.className = `team-card p-2 bg-white border rounded-lg transition relative ${isEliminated ? 'eliminated' : 'cursor-pointer hover:bg-blue-50'} ${isSelected ? 'selected' : 'border-gray-200'}`;
+                if (!isEliminated) card.onclick = (e) => {
+                    if(e.target.closest('button')) return; 
+                    toggleTeamSelection(t.id);
+                };
+                
+                card.innerHTML = `
+                    <div class="flex justify-between items-start">
+                        <div>
+                            <div class="font-bold text-gray-800 text-sm">${t.name} ${isEliminated ? '<span class="text-red-500 text-[10px]">(탈락)</span>' : ''}</div>
+                            <div class="text-[11px] text-gray-500 mt-1">${t.p1.name}(${t.p1.level}) & ${t.p2.name}(${t.p2.level})</div>
+                        </div>
+                        <button onclick="deleteTeam('${t.id}')" class="text-gray-400 hover:text-red-500 px-1 transition" title="조 해체하기">
+                            <i class="fa-solid fa-xmark"></i>
+                        </button>
+                    </div>
+                `;
+                listEl.appendChild(card);
+            });
+        }
+
+        function updateCourtVisual() {
+            const t1p1Slot = document.getElementById('builder-t1p1');
+            const t1p2Slot = document.getElementById('builder-t1p2');
+            const t2p1Slot = document.getElementById('builder-t2p1');
+            const t2p2Slot = document.getElementById('builder-t2p2');
+            
+            if (STATE.mode === 'team_league') {
+                const t1 = STATE.selectedTeams[0] ? STATE.teams.find(t => t.id === STATE.selectedTeams[0]) : null;
+                const t2 = STATE.selectedTeams[1] ? STATE.teams.find(t => t.id === STATE.selectedTeams[1]) : null;
+
+                const makeTeamSlot = (team, color) => `
+                    <div class="w-full h-full flex flex-col justify-center items-center">
+                        <div class="bg-white text-${color}-800 font-black px-2 py-1 rounded shadow-lg border-2 border-${color}-200 w-full truncate text-sm mb-1">${team ? team.name : '팀 선택'}</div>
+                        ${team ? `<div class="text-[10px] font-bold text-white bg-${color}-600 px-2 rounded-full truncate">${team.p1.name} & ${team.p2.name}</div>` : ''}
+                    </div>
+                `;
+
+                // 조별 모드일 때는 두 칸을 하나처럼 보이도록 구성
+                t1p1Slot.innerHTML = t1 ? makeTeamSlot(t1, 'blue') : `<i class="fa-solid fa-users text-2xl mb-1 opacity-50 text-white"></i><p class="text-[10px] opacity-75 text-white">1팀(조) 선택</p>`;
+                t1p2Slot.innerHTML = '';
+                t2p1Slot.innerHTML = t2 ? makeTeamSlot(t2, 'red') : `<i class="fa-solid fa-users text-2xl mb-1 opacity-50 text-white"></i><p class="text-[10px] opacity-75 text-white">2팀(조) 선택</p>`;
+                t2p2Slot.innerHTML = '';
+
+            } else {
+                const makePlayerSlot = (player, color, label) => {
+                    if (player) {
+                        return `
+                            <div class="bg-white text-${color}-800 font-black px-2 py-1 rounded shadow-lg border-2 border-${color}-200 w-full truncate text-sm mb-0.5">${player.name}</div>
+                            <div class="text-[9px] font-bold text-white bg-${color}-600 px-2 rounded-full truncate">${player.level}</div>
+                        `;
+                    }
+                    return `<i class="fa-regular fa-user text-2xl mb-1 opacity-50 text-white"></i><p class="text-[10px] opacity-75 text-white">${label}</p>`;
+                };
+
+                t1p1Slot.innerHTML = makePlayerSlot(STATE.selectedPlayers[0] ? STATE.participants.find(p => p.id === STATE.selectedPlayers[0]) : null, 'blue', '1팀 - 1');
+                t1p2Slot.innerHTML = makePlayerSlot(STATE.selectedPlayers[1] ? STATE.participants.find(p => p.id === STATE.selectedPlayers[1]) : null, 'blue', '1팀 - 2');
+                t2p1Slot.innerHTML = makePlayerSlot(STATE.selectedPlayers[2] ? STATE.participants.find(p => p.id === STATE.selectedPlayers[2]) : null, 'red', '2팀 - 1');
+                t2p2Slot.innerHTML = makePlayerSlot(STATE.selectedPlayers[3] ? STATE.participants.find(p => p.id === STATE.selectedPlayers[3]) : null, 'red', '2팀 - 2');
             }
         }
 
-        // 3. 진행 현황
         function renderMatches() {
             const listEl = document.getElementById('matchList');
             listEl.innerHTML = '';
 
             if (STATE.matches.length === 0) {
-                listEl.innerHTML = '<div class="text-gray-400 italic col-span-full text-center py-10 text-sm">생성된 경기가 없습니다. 선수 4명을 선택하여 대진표를 추가해주세요.</div>';
+                listEl.innerHTML = '<div class="text-gray-400 italic col-span-full text-center py-10 text-sm">생성된 경기가 없습니다. 대진표를 추가해주세요.</div>';
                 return;
             }
 
-            // 미완료 경기가 먼저 오도록 정렬
             const sortedMatches = [...STATE.matches].sort((a, b) => (a.completed === b.completed) ? 0 : a.completed ? 1 : -1);
 
             sortedMatches.forEach(m => {
-                const t1p1 = STATE.participants.find(p => p.id === m.t1p1Id);
-                const t1p2 = STATE.participants.find(p => p.id === m.t1p2Id);
-                const t2p1 = STATE.participants.find(p => p.id === m.t2p1Id);
-                const t2p2 = STATE.participants.find(p => p.id === m.t2p2Id);
-                
-                if(!t1p1 || !t1p2 || !t2p1 || !t2p2) return;
+                let name1, name2, detail1, detail2, t1nameForTTS, t2nameForTTS;
+
+                if (m.type === 'team') {
+                    const t1 = STATE.teams.find(t => t.id === m.t1Id);
+                    const t2 = STATE.teams.find(t => t.id === m.t2Id);
+                    if(!t1 || !t2) return;
+                    name1 = t1.name; name2 = t2.name;
+                    detail1 = `${t1.p1.name} & ${t1.p2.name}`;
+                    detail2 = `${t2.p1.name} & ${t2.p2.name}`;
+                    t1nameForTTS = t1.name; t2nameForTTS = t2.name;
+                } else {
+                    const t1p1 = STATE.participants.find(p => p.id === m.t1p1Id);
+                    const t1p2 = STATE.participants.find(p => p.id === m.t1p2Id);
+                    const t2p1 = STATE.participants.find(p => p.id === m.t2p1Id);
+                    const t2p2 = STATE.participants.find(p => p.id === m.t2p2Id);
+                    if(!t1p1 || !t1p2 || !t2p1 || !t2p2) return;
+                    name1 = t1p1.name; detail1 = t1p2.name;
+                    name2 = t2p1.name; detail2 = t2p2.name;
+                    t1nameForTTS = `${t1p1.name}, ${t1p2.name}`; t2nameForTTS = `${t2p1.name}, ${t2p2.name}`;
+                }
 
                 const card = document.createElement('div');
                 card.className = `border rounded-xl p-3 shadow-sm flex flex-col justify-between ${m.completed ? 'bg-gray-50 border-gray-200 opacity-80' : 'bg-white border-purple-200'}`;
                 
                 let content = `
                     <div class="flex justify-between items-center mb-2 px-1">
-                        <div class="flex gap-1">
-                            <span class="bg-purple-100 text-purple-800 text-[10px] font-bold px-2 py-1 rounded-full"><i class="fa-solid fa-layer-group"></i> ${m.round}</span>
-                            <span class="bg-blue-100 text-blue-800 text-[10px] font-bold px-2 py-1 rounded-full"><i class="fa-solid fa-map-location-dot"></i> 코트 ${m.court}</span>
+                        <div class="flex gap-1 overflow-hidden">
+                            <span class="bg-purple-100 text-purple-800 text-[10px] font-bold px-2 py-1 rounded-full truncate max-w-[100px]"><i class="fa-solid fa-layer-group"></i> ${m.round}</span>
+                            <span class="bg-blue-100 text-blue-800 text-[10px] font-bold px-2 py-1 rounded-full whitespace-nowrap"><i class="fa-solid fa-map-location-dot"></i> 코트 ${m.court}</span>
                         </div>
-                        <span class="text-[10px] font-bold ${m.completed ? 'text-gray-500' : 'text-green-600 animate-pulse'}">${m.completed ? '종료' : '대기중'}</span>
+                        <span class="text-[10px] font-bold whitespace-nowrap ml-1 ${m.completed ? 'text-gray-500' : 'text-green-600 animate-pulse'}">${m.completed ? '종료' : '대기중'}</span>
                     </div>
                     
                     <div class="badminton-court rounded-lg h-28 flex relative mb-3 ${m.completed ? 'grayscale opacity-75' : ''}">
@@ -454,15 +784,15 @@
                         
                         <div class="w-1/2 flex flex-col items-center justify-around z-20 text-white p-1 relative">
                             ${m.completed && m.score1 > m.score2 ? '<div class="absolute top-0 left-1 text-yellow-300 text-[10px] font-bold drop-shadow"><i class="fa-solid fa-crown"></i> WIN</div>' : ''}
-                            <div class="font-bold text-sm truncate w-full text-center drop-shadow-md">${t1p1.name}</div>
-                            <div class="font-bold text-sm truncate w-full text-center drop-shadow-md">${t1p2.name}</div>
+                            <div class="font-bold text-sm truncate w-full text-center drop-shadow-md">${name1}</div>
+                            <div class="text-[11px] font-bold truncate w-full text-center opacity-90">${detail1}</div>
                             ${m.completed ? `<div class="absolute inset-0 flex items-center justify-center"><div class="text-4xl font-black text-yellow-300 drop-shadow-[0_2px_2px_rgba(0,0,0,0.8)] leading-none">${m.score1}</div></div>` : ''}
                         </div>
                         
                         <div class="w-1/2 flex flex-col items-center justify-around z-20 text-white p-1 relative">
                             ${m.completed && m.score2 > m.score1 ? '<div class="absolute top-0 right-1 text-yellow-300 text-[10px] font-bold drop-shadow"><i class="fa-solid fa-crown"></i> WIN</div>' : ''}
-                            <div class="font-bold text-sm truncate w-full text-center drop-shadow-md">${t2p1.name}</div>
-                            <div class="font-bold text-sm truncate w-full text-center drop-shadow-md">${t2p2.name}</div>
+                            <div class="font-bold text-sm truncate w-full text-center drop-shadow-md">${name2}</div>
+                            <div class="text-[11px] font-bold truncate w-full text-center opacity-90">${detail2}</div>
                             ${m.completed ? `<div class="absolute inset-0 flex items-center justify-center"><div class="text-4xl font-black text-yellow-300 drop-shadow-[0_2px_2px_rgba(0,0,0,0.8)] leading-none">${m.score2}</div></div>` : ''}
                         </div>
                     </div>
@@ -471,7 +801,7 @@
                 if (!m.completed) {
                     content += `
                         <div class="flex gap-2">
-                            <button onclick="announceTTS('${m.round}', '${t1p1.name}, ${t1p2.name}', '${t2p1.name}, ${t2p2.name}', '${m.court}')" class="w-1/2 bg-yellow-100 hover:bg-yellow-200 text-yellow-800 py-1.5 rounded text-[11px] font-bold transition flex items-center justify-center gap-1">
+                            <button onclick="announceTTS('${m.round}', '${t1nameForTTS}', '${t2nameForTTS}', '${m.court}')" class="w-1/2 bg-yellow-100 hover:bg-yellow-200 text-yellow-800 py-1.5 rounded text-[11px] font-bold transition flex items-center justify-center gap-1">
                                 <i class="fa-solid fa-bullhorn"></i> 방송
                             </button>
                             <button onclick="openScoreModal(${m.id})" class="w-1/2 bg-blue-100 hover:bg-blue-200 text-blue-800 py-1.5 rounded text-[11px] font-bold transition flex items-center justify-center gap-1">
@@ -485,32 +815,23 @@
             });
         }
 
-        // 4. 순위표 (개인 단위)
+        // 4. 순위표 (팀 단위 OR 개인 단위 자동 스위칭)
         function renderLeaderboard() {
             const body = document.getElementById('leaderboardBody');
             const title = document.getElementById('standingsTitle');
+            const headerName = document.getElementById('lbNameHeader');
             body.innerHTML = '';
 
-            if (STATE.mode === 'tournament') {
-                title.innerHTML = '<i class="fa-solid fa-sitemap text-yellow-500"></i> 생존자 현황 (토너먼트)';
-                const survivors = STATE.participants.filter(p => !p.eliminated);
-                survivors.forEach((p) => {
-                    body.innerHTML += `
-                        <tr class="hover:bg-gray-50">
-                            <td class="px-2 py-2 whitespace-nowrap"><span class="bg-green-100 text-green-800 px-2 py-1 rounded text-[10px] font-bold">생존</span></td>
-                            <td class="px-2 py-2 whitespace-nowrap font-bold text-xs">${p.name}</td>
-                            <td class="px-2 py-2 whitespace-nowrap text-gray-500 text-[11px]">${p.level}</td>
-                            <td class="px-2 py-2 whitespace-nowrap text-gray-500 text-[11px]">${p.matchesPlayed}</td>
-                            <td class="px-2 py-2 whitespace-nowrap text-gray-400 text-[11px]">-</td>
-                        </tr>
-                    `;
-                });
-            } else {
-                title.innerHTML = '<i class="fa-solid fa-trophy text-yellow-500"></i> 개인별 순위 (득점 합산)';
-                const sorted = [...STATE.participants].sort((a, b) => b.totalPoints - a.totalPoints || b.matchesPlayed - a.matchesPlayed);
+            let dataList = [];
+
+            if (STATE.mode === 'team_league') {
+                title.innerHTML = '<i class="fa-solid fa-trophy text-yellow-500"></i> 조별 리그 순위 (팀 점수)';
+                headerName.innerText = '팀(조) 명';
+                dataList = [...STATE.teams];
                 
-                sorted.forEach((p, index) => {
-                    if (p.matchesPlayed === 0 && p.totalPoints === 0) return; 
+                const sorted = dataList.sort((a, b) => b.totalPoints - a.totalPoints || b.matchesPlayed - a.matchesPlayed);
+                sorted.forEach((t, index) => {
+                    if (t.matchesPlayed === 0 && t.totalPoints === 0) return; 
                     
                     let rankIcon = `${index + 1}`;
                     if (index === 0) rankIcon = '<i class="fa-solid fa-medal text-yellow-400 text-lg"></i>';
@@ -520,85 +841,59 @@
                     body.innerHTML += `
                         <tr class="hover:bg-gray-50">
                             <td class="px-2 py-2 whitespace-nowrap font-bold">${rankIcon}</td>
-                            <td class="px-2 py-2 whitespace-nowrap font-bold text-xs">${p.name}</td>
-                            <td class="px-2 py-2 whitespace-nowrap text-gray-500 text-[11px]">${p.level}</td>
-                            <td class="px-2 py-2 whitespace-nowrap text-gray-500 text-[11px]">${p.matchesPlayed}</td>
-                            <td class="px-2 py-2 whitespace-nowrap font-black text-blue-600 text-sm">${p.totalPoints}</td>
+                            <td class="px-2 py-2 whitespace-nowrap font-bold text-xs">${t.name}</td>
+                            <td class="px-2 py-2 whitespace-nowrap text-gray-500 text-[10px]">${t.p1.name}, ${t.p2.name}</td>
+                            <td class="px-2 py-2 whitespace-nowrap text-gray-500 text-[11px]">${t.matchesPlayed}</td>
+                            <td class="px-2 py-2 whitespace-nowrap font-black text-blue-600 text-sm">${t.totalPoints}</td>
                         </tr>
                     `;
                 });
+
+            } else {
+                headerName.innerText = '이름';
+                if (STATE.mode === 'tournament') {
+                    title.innerHTML = '<i class="fa-solid fa-sitemap text-yellow-500"></i> 개인 토너먼트 생존자';
+                    dataList = STATE.participants.filter(p => !p.eliminated);
+                    dataList.forEach((p) => {
+                        body.innerHTML += `
+                            <tr class="hover:bg-gray-50">
+                                <td class="px-2 py-2 whitespace-nowrap"><span class="bg-green-100 text-green-800 px-2 py-1 rounded text-[10px] font-bold">생존</span></td>
+                                <td class="px-2 py-2 whitespace-nowrap font-bold text-xs">${p.name}</td>
+                                <td class="px-2 py-2 whitespace-nowrap text-gray-500 text-[11px]">${p.level}</td>
+                                <td class="px-2 py-2 whitespace-nowrap text-gray-500 text-[11px]">${p.matchesPlayed}</td>
+                                <td class="px-2 py-2 whitespace-nowrap text-gray-400 text-[11px]">-</td>
+                            </tr>
+                        `;
+                    });
+                } else {
+                    title.innerHTML = '<i class="fa-solid fa-trophy text-yellow-500"></i> 개인별 순위 (득점 합산)';
+                    dataList = [...STATE.participants];
+                    const sorted = dataList.sort((a, b) => b.totalPoints - a.totalPoints || b.matchesPlayed - a.matchesPlayed);
+                    
+                    sorted.forEach((p, index) => {
+                        if (p.matchesPlayed === 0 && p.totalPoints === 0) return; 
+                        
+                        let rankIcon = `${index + 1}`;
+                        if (index === 0) rankIcon = '<i class="fa-solid fa-medal text-yellow-400 text-lg"></i>';
+                        else if (index === 1) rankIcon = '<i class="fa-solid fa-medal text-gray-400 text-lg"></i>';
+                        else if (index === 2) rankIcon = '<i class="fa-solid fa-medal text-orange-400 text-lg"></i>';
+
+                        body.innerHTML += `
+                            <tr class="hover:bg-gray-50">
+                                <td class="px-2 py-2 whitespace-nowrap font-bold">${rankIcon}</td>
+                                <td class="px-2 py-2 whitespace-nowrap font-bold text-xs">${p.name}</td>
+                                <td class="px-2 py-2 whitespace-nowrap text-gray-500 text-[11px]">${p.level}</td>
+                                <td class="px-2 py-2 whitespace-nowrap text-gray-500 text-[11px]">${p.matchesPlayed}</td>
+                                <td class="px-2 py-2 whitespace-nowrap font-black text-blue-600 text-sm">${p.totalPoints}</td>
+                            </tr>
+                        `;
+                    });
+                }
             }
+
             if (body.innerHTML === '') {
                  body.innerHTML = '<tr><td colspan="5" class="px-2 py-6 text-gray-400 text-center italic text-xs">순위를 매길 데이터가 없습니다.</td></tr>';
             }
-        }
-
-
-        // --- Actions & Logic ---
-
-        function changeMode() {
-            STATE.mode = document.getElementById('tournamentMode').value;
-            if (STATE.mode === 'points') {
-                STATE.participants.forEach(p => p.eliminated = false);
-            }
-            clearSelection();
-            renderAll();
-            showMessage(`방식이 [${STATE.mode === 'points' ? '개인별 득점 합산' : '토너먼트'}]으로 변경되었습니다.`, 'success');
-        }
-
-        // 참가자 선택 (최대 4명)
-        function togglePlayerSelection(id) {
-            const player = STATE.participants.find(p => p.id === id);
-            if (STATE.mode === 'tournament' && player.eliminated) {
-                showMessage("이미 탈락한 선수는 선택할 수 없습니다.", "error");
-                return;
-            }
-
-            const index = STATE.selectedPlayers.indexOf(id);
-            if (index > -1) {
-                STATE.selectedPlayers.splice(index, 1);
-            } else {
-                if (STATE.selectedPlayers.length >= 4) {
-                    STATE.selectedPlayers.shift(); // 4명 넘어가면 가장 먼저 선택한 사람 해제
-                }
-                STATE.selectedPlayers.push(id);
-            }
-            renderParticipants();
-            updateCourtVisual();
-        }
-
-        function clearSelection() {
-            STATE.selectedPlayers = [];
-            renderParticipants();
-            updateCourtVisual();
-        }
-
-        // 경기(대진) 추가
-        function createMatch() {
-            if (STATE.selectedPlayers.length !== 4) {
-                showMessage("출전할 4명의 선수를 모두 선택해주세요.", "error");
-                return;
-            }
-            const round = document.getElementById('roundInput').value || "일반경기";
-            const court = document.getElementById('courtInput').value || "?";
-            
-            STATE.matches.push({
-                id: STATE.matchIdCounter++,
-                t1p1Id: STATE.selectedPlayers[0],
-                t1p2Id: STATE.selectedPlayers[1],
-                t2p1Id: STATE.selectedPlayers[2],
-                t2p2Id: STATE.selectedPlayers[3],
-                round: round,
-                court: court,
-                score1: 0,
-                score2: 0,
-                completed: false
-            });
-
-            clearSelection();
-            document.getElementById('courtInput').value = '';
-            renderAll();
-            showMessage(`[${round}] 대진표가 추가되었습니다.`, "success");
         }
 
         // --- TTS Announcer ---
@@ -608,7 +903,7 @@
                 return;
             }
             
-            const text = `안내 말씀 드립니다. ${round}, ${court}번 코트. ${t1Names} 대 ${t2Names} 복식 경기 시작합니다. 출전 선수들은 ${court}번 코트로 입장해 주시기 바랍니다.`;
+            const text = `안내 말씀 드립니다. ${round}, ${court}번 코트. ${t1Names} 대 ${t2Names} 경기 시작합니다. 출전 선수들은 ${court}번 코트로 입장해 주시기 바랍니다.`;
             const utterance = new SpeechSynthesisUtterance(text);
             utterance.lang = 'ko-KR';
             utterance.rate = 0.9;
@@ -652,15 +947,23 @@
             }
 
             const match = STATE.matches.find(m => m.id === matchId);
-            const t1p1 = STATE.participants.find(p => p.id === match.t1p1Id);
-            const t1p2 = STATE.participants.find(p => p.id === match.t1p2Id);
-            const t2p1 = STATE.participants.find(p => p.id === match.t2p1Id);
-            const t2p2 = STATE.participants.find(p => p.id === match.t2p2Id);
-
             document.getElementById('currentMatchId').value = matchId;
             document.getElementById('scoreModalSub').innerText = `${match.round} | 코트 ${match.court} 경기 기록`;
-            document.getElementById('scoreTeam1Name').innerHTML = `<span class="text-xs text-gray-500">1팀</span><br>${t1p1.name}, ${t1p2.name}`;
-            document.getElementById('scoreTeam2Name').innerHTML = `<span class="text-xs text-gray-500">2팀</span><br>${t2p1.name}, ${t2p2.name}`;
+            
+            if (match.type === 'team') {
+                const t1 = STATE.teams.find(t => t.id === match.t1Id);
+                const t2 = STATE.teams.find(t => t.id === match.t2Id);
+                document.getElementById('scoreTeam1Name').innerHTML = `<span class="text-xs text-gray-500">1팀</span><br>${t1.name}`;
+                document.getElementById('scoreTeam2Name').innerHTML = `<span class="text-xs text-gray-500">2팀</span><br>${t2.name}`;
+            } else {
+                const t1p1 = STATE.participants.find(p => p.id === match.t1p1Id);
+                const t1p2 = STATE.participants.find(p => p.id === match.t1p2Id);
+                const t2p1 = STATE.participants.find(p => p.id === match.t2p1Id);
+                const t2p2 = STATE.participants.find(p => p.id === match.t2p2Id);
+                document.getElementById('scoreTeam1Name').innerHTML = `<span class="text-xs text-gray-500">1팀</span><br>${t1p1.name}, ${t1p2.name}`;
+                document.getElementById('scoreTeam2Name').innerHTML = `<span class="text-xs text-gray-500">2팀</span><br>${t2p1.name}, ${t2p2.name}`;
+            }
+            
             document.getElementById('score1Input').value = '';
             document.getElementById('score2Input').value = '';
 
@@ -677,48 +980,51 @@
             match.score2 = s2;
             match.completed = true;
 
-            const t1p1 = STATE.participants.find(p => p.id === match.t1p1Id);
-            const t1p2 = STATE.participants.find(p => p.id === match.t1p2Id);
-            const t2p1 = STATE.participants.find(p => p.id === match.t2p1Id);
-            const t2p2 = STATE.participants.find(p => p.id === match.t2p2Id);
+            if (match.type === 'team') {
+                const t1 = STATE.teams.find(t => t.id === match.t1Id);
+                const t2 = STATE.teams.find(t => t.id === match.t2Id);
+                
+                t1.matchesPlayed++;
+                t2.matchesPlayed++;
+                
+                // 팀 점수 및 개인 점수 동시 기록
+                t1.totalPoints += s1;
+                t2.totalPoints += s2;
+                t1.p1.totalPoints += s1; t1.p1.matchesPlayed++;
+                t1.p2.totalPoints += s1; t1.p2.matchesPlayed++;
+                t2.p1.totalPoints += s2; t2.p1.matchesPlayed++;
+                t2.p2.totalPoints += s2; t2.p2.matchesPlayed++;
 
-            // Update Individual Statistics
-            t1p1.matchesPlayed++;
-            t1p2.matchesPlayed++;
-            t2p1.matchesPlayed++;
-            t2p2.matchesPlayed++;
+                if (STATE.mode === 'tournament') {
+                    if (s1 > s2) t2.eliminated = true;
+                    else if (s2 > s1) t1.eliminated = true;
+                }
+            } else {
+                const t1p1 = STATE.participants.find(p => p.id === match.t1p1Id);
+                const t1p2 = STATE.participants.find(p => p.id === match.t1p2Id);
+                const t2p1 = STATE.participants.find(p => p.id === match.t2p1Id);
+                const t2p2 = STATE.participants.find(p => p.id === match.t2p2Id);
 
-            if (STATE.mode === 'points') {
-                // 팀 1에 속한 2명에게 팀1의 득점을 각각 부여
-                t1p1.totalPoints += s1;
-                t1p2.totalPoints += s1;
-                // 팀 2에 속한 2명에게 팀2의 득점을 각각 부여
-                t2p1.totalPoints += s2;
-                t2p2.totalPoints += s2;
-            } else if (STATE.mode === 'tournament') {
-                // 토너먼트 모드: 진 팀에 속한 개인 2명 모두 탈락 처리
-                if (s1 > s2) {
-                    t2p1.eliminated = true;
-                    t2p2.eliminated = true;
-                } else if (s2 > s1) {
-                    t1p1.eliminated = true;
-                    t1p2.eliminated = true;
+                t1p1.matchesPlayed++; t1p2.matchesPlayed++;
+                t2p1.matchesPlayed++; t2p2.matchesPlayed++;
+
+                if (STATE.mode === 'individual_points') {
+                    t1p1.totalPoints += s1; t1p2.totalPoints += s1;
+                    t2p1.totalPoints += s2; t2p2.totalPoints += s2;
+                } else if (STATE.mode === 'tournament') {
+                    if (s1 > s2) { t2p1.eliminated = true; t2p2.eliminated = true; } 
+                    else if (s2 > s1) { t1p1.eliminated = true; t1p2.eliminated = true; }
                 }
             }
 
             closeModal('scoreModal');
             renderAll();
-            showMessage("개인별 득점이 반영되었습니다.", "success");
+            showMessage("점수가 반영되었습니다.", "success");
         }
 
         // --- Modals ---
-        function openModal(id) {
-            document.getElementById(id).classList.remove('hidden');
-        }
-
-        function closeModal(id) {
-            document.getElementById(id).classList.add('hidden');
-        }
+        function openModal(id) { document.getElementById(id).classList.remove('hidden'); }
+        function closeModal(id) { document.getElementById(id).classList.add('hidden'); }
     </script>
 </body>
 </html>
