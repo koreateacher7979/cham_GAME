@@ -96,7 +96,7 @@
                     <h2 class="text-md font-bold"><i class="fa-solid fa-users"></i> 참가자 현황</h2>
                     <span id="participantCount" class="text-xs bg-green-100 text-green-800 py-1 px-2 rounded-full font-bold">0명</span>
                 </div>
-                <p id="participantInstruction" class="text-[11px] text-gray-500 mb-3">* 출전할 선수 4명을 순서대로 클릭하세요.<br> - 수동: 1,2번째(1팀) / 3,4번째(2팀)<br> - 자동: 4명 선택 후 [자동 대진] 클릭</p>
+                <p id="participantInstruction" class="text-[11px] text-gray-500 mb-3">* 출전할 선수 4명을 순서대로 클릭하세요.<br> - 수동: 1,2번째(1팀) / 3,4번째(2팀)<br> - 자동: [밸런스 초안] 클릭 후 수정 가능</p>
                 
                 <div id="loadingIndicator" class="text-center text-gray-500 py-4 text-sm">
                     <i class="fa-solid fa-spinner fa-spin text-xl mb-2"></i><br>데이터 로드 중...
@@ -106,9 +106,14 @@
                     <!-- Participant Cards injected here -->
                 </div>
                 
-                <button onclick="clearSelection()" class="w-full bg-gray-200 hover:bg-gray-300 text-gray-700 font-bold py-2 rounded-md transition shadow text-sm mb-2">
-                    <i class="fa-solid fa-rotate-right"></i> 선택 초기화
-                </button>
+                <div class="flex gap-2 mb-2">
+                    <button onclick="autoDraft()" class="w-1/2 bg-teal-500 hover:bg-teal-600 text-white font-bold py-2 rounded-md transition shadow text-sm flex items-center justify-center gap-1">
+                        <i class="fa-solid fa-wand-magic-sparkles"></i> 밸런스 초안
+                    </button>
+                    <button onclick="clearSelection()" class="w-1/2 bg-gray-200 hover:bg-gray-300 text-gray-700 font-bold py-2 rounded-md transition shadow text-sm flex items-center justify-center gap-1">
+                        <i class="fa-solid fa-rotate-right"></i> 선택 초기화
+                    </button>
+                </div>
                 <button id="createTeamBtn" onclick="createTeam()" style="display: none;" class="w-full bg-indigo-600 hover:bg-indigo-700 text-white font-bold py-2 rounded-md transition shadow text-sm">
                     <i class="fa-solid fa-link"></i> 선택한 2명으로 조 결성
                 </button>
@@ -170,7 +175,7 @@
                 </div>
                 <div class="flex flex-col sm:flex-row gap-2">
                     <button onclick="createMatch()" class="w-full sm:w-1/2 bg-blue-500 hover:bg-blue-600 text-white font-bold py-2 rounded-md transition shadow flex items-center justify-center gap-2 text-sm">
-                        <i class="fa-solid fa-plus"></i> 수동 추가 (1경기)
+                        <i class="fa-solid fa-plus"></i> 추가 (1경기)
                     </button>
                     <button id="autoMatchBtn" onclick="createAutoMatches()" class="w-full sm:w-1/2 bg-purple-600 hover:bg-purple-700 text-white font-bold py-2 rounded-md transition shadow flex items-center justify-center gap-2 text-sm">
                         <i class="fa-solid fa-magic"></i> 4인 자동 대진 (3경기)
@@ -393,8 +398,8 @@
             document.getElementById('teamSection').style.display = isTeamMode ? 'flex' : 'none';
             document.getElementById('createTeamBtn').style.display = isTeamMode ? 'block' : 'none';
             document.getElementById('participantInstruction').innerHTML = isTeamMode 
-                ? '* 2명을 클릭하여 하나의 조(팀)로 결성하세요.' 
-                : '* 출전할 선수 4명을 순서대로 클릭하세요.<br> - 수동: 1,2번째(1팀) / 3,4번째(2팀)<br> - 자동: 4명 선택 후 [자동 대진] 클릭';
+                ? '* 2명을 클릭하여 하나의 조(팀)로 결성하세요.<br> - 자동: [밸런스 초안] 클릭 후 수정 가능' 
+                : '* 출전할 선수 4명을 순서대로 클릭하세요.<br> - 수동: 1,2번째(1팀) / 3,4번째(2팀)<br> - 자동: [밸런스 초안] 클릭 후 수정 가능';
             
             document.getElementById('autoMatchBtn').innerHTML = isTeamMode
                 ? '<i class="fa-solid fa-magic"></i> 편성된 풀리그 생성'
@@ -404,6 +409,80 @@
             showMessage(`방식이 변경되었습니다. 모든 기록이 초기화되었습니다.`, 'success');
         }
 
+        // 플레이어별 점수 환산 (자동 초안 밸런스용)
+        function getPlayerScore(p) {
+            let score = 0;
+            // 급수 (A~D)
+            const level = p.level.toUpperCase();
+            if (level.includes('A')) score += 40;
+            else if (level.includes('B')) score += 30;
+            else if (level.includes('C')) score += 20;
+            else if (level.includes('D')) score += 10;
+            else score += 5;
+
+            // 나이대 (낮을수록 체력점수 가산)
+            const age = p.age;
+            if (age.includes('20')) score += 5;
+            else if (age.includes('30')) score += 4;
+            else if (age.includes('40')) score += 3;
+            else if (age.includes('50')) score += 2;
+            else if (age.includes('60')) score += 1;
+            else score += 3;
+
+            // 성별 
+            const gender = p.gender;
+            if (gender === '남') score += 5;
+            else if (gender === '여') score += 3;
+            else score += 4;
+
+            // 동일 조건일 때의 랜덤성을 위한 미세 난수
+            score += (Math.random() * 4 - 2); 
+            return score;
+        }
+
+        function autoDraft() {
+            // 선택 가능한 인원 필터링
+            let available = STATE.participants.filter(p => !p.eliminated && (STATE.mode !== 'team_league' || !p.hasTeam));
+            const needed = STATE.mode === 'team_league' ? 2 : 4;
+            
+            if (available.length < needed) {
+                showMessage(`대진 초안을 구성하려면 선택 가능한 선수가 최소 ${needed}명 이상이어야 합니다.`, "error");
+                return;
+            }
+
+            clearSelection();
+
+            // 점수 계산 및 정렬
+            available.forEach(p => p._tempScore = getPlayerScore(p));
+            available.sort((a, b) => b._tempScore - a._tempScore);
+
+            if (needed === 4) {
+                // 개인/토너먼트 (비슷한 실력 4명 선발 후 밸런스 분배)
+                const maxIdx = available.length - 4;
+                const startIdx = Math.floor(Math.random() * (maxIdx + 1));
+                const group = available.slice(startIdx, startIdx + 4);
+                
+                // 정렬된 4명을 1위+4위(팀1) VS 2위+3위(팀2) 로 매칭
+                STATE.selectedPlayers = [group[0].id, group[3].id, group[1].id, group[2].id];
+                showMessage("실력(급수/성별/나이)이 비슷한 4명을 선발하여 밸런스 초안을 구성했습니다.", "success");
+            } else if (needed === 2) {
+                // 팀 구성 (고수 1명 + 초심 1명 매칭)
+                const topMax = Math.floor(available.length / 3) || 1;
+                const topIdx = Math.floor(Math.random() * topMax); // 상위권 중 1명
+                const botIdx = available.length - 1 - Math.floor(Math.random() * topMax); // 하위권 중 1명
+                
+                if (topIdx === botIdx) {
+                    STATE.selectedPlayers = [available[0].id, available[1].id];
+                } else {
+                    STATE.selectedPlayers = [available[topIdx].id, available[botIdx].id];
+                }
+                showMessage("급수/성별/나이를 종합하여 밸런스 고정 조(팀) 초안을 구성했습니다.", "success");
+            }
+
+            renderParticipants();
+            updateCourtVisual();
+        }
+
         function togglePlayerSelection(id) {
             const player = STATE.participants.find(p => p.id === id);
             
@@ -411,7 +490,6 @@
                 showMessage("이미 탈락한 선수는 선택할 수 없습니다.", "error");
                 return;
             }
-            // 팀 리그전 모드일 때 이미 팀이 있는 경우 선택 방지
             if (STATE.mode === 'team_league' && player.hasTeam) {
                 return;
             }
@@ -423,7 +501,7 @@
                 STATE.selectedPlayers.splice(index, 1);
             } else {
                 if (STATE.selectedPlayers.length >= limit) {
-                    STATE.selectedPlayers.shift(); // 한도 초과 시 오래된 선택 해제
+                    STATE.selectedPlayers.shift(); 
                 }
                 STATE.selectedPlayers.push(id);
             }
