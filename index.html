@@ -290,8 +290,8 @@
             selectedTeams: [],   
             teamIdCounter: 1,
             matchIdCounter: 1,
-            totalCourts: 4,      // 운영 코트 수
-            nextCourt: 1         // 자동 배정용 코트 트래커
+            totalCourts: 4,      
+            nextCourt: 1         
         };
 
         // --- Utility ---
@@ -387,6 +387,68 @@
 
         // --- Core Application Logic ---
 
+        function recalculateStats() {
+            // 통계 전면 초기화
+            STATE.participants.forEach(p => {
+                p.matchesPlayed = 0;
+                p.totalPoints = 0;
+                p.eliminated = false;
+            });
+            STATE.teams.forEach(t => {
+                t.matchesPlayed = 0;
+                t.totalPoints = 0;
+                t.eliminated = false;
+            });
+
+            // 생성(추가)된 순서대로 완료된 경기 점수 다시 계산하여 누적
+            const completedMatches = STATE.matches.filter(m => m.completed).sort((a, b) => a.id - b.id);
+
+            completedMatches.forEach(m => {
+                const s1 = m.score1;
+                const s2 = m.score2;
+
+                if (m.type === 'team') {
+                    const t1 = STATE.teams.find(t => t.id === m.t1Id);
+                    const t2 = STATE.teams.find(t => t.id === m.t2Id);
+                    if (t1) {
+                        t1.matchesPlayed++; t1.totalPoints += s1;
+                        t1.p1.matchesPlayed++; t1.p1.totalPoints += s1;
+                        t1.p2.matchesPlayed++; t1.p2.totalPoints += s1;
+                    }
+                    if (t2) {
+                        t2.matchesPlayed++; t2.totalPoints += s2;
+                        t2.p1.matchesPlayed++; t2.p1.totalPoints += s2;
+                        t2.p2.matchesPlayed++; t2.p2.totalPoints += s2;
+                    }
+                    if (STATE.mode === 'tournament') {
+                        if (s1 > s2 && t2) t2.eliminated = true;
+                        else if (s2 > s1 && t1) t1.eliminated = true;
+                    }
+                } else {
+                    const t1p1 = STATE.participants.find(p => p.id === m.t1p1Id);
+                    const t1p2 = STATE.participants.find(p => p.id === m.t1p2Id);
+                    const t2p1 = STATE.participants.find(p => p.id === m.t2p1Id);
+                    const t2p2 = STATE.participants.find(p => p.id === m.t2p2Id);
+
+                    if (t1p1) { t1p1.matchesPlayed++; t1p1.totalPoints += s1; }
+                    if (t1p2) { t1p2.matchesPlayed++; t1p2.totalPoints += s1; }
+                    if (t2p1) { t2p1.matchesPlayed++; t2p1.totalPoints += s2; }
+                    if (t2p2) { t2p2.matchesPlayed++; t2p2.totalPoints += s2; }
+
+                    if (STATE.mode === 'tournament') {
+                        if (s1 > s2) { 
+                            if(t2p1) t2p1.eliminated = true; 
+                            if(t2p2) t2p2.eliminated = true; 
+                        } 
+                        else if (s2 > s1) { 
+                            if(t1p1) t1p1.eliminated = true; 
+                            if(t1p2) t1p2.eliminated = true; 
+                        }
+                    }
+                }
+            });
+        }
+
         function changeMode() {
             if (STATE.matches.length > 0) {
                 if(!confirm("대회 방식을 변경하면 기존 대진표 및 점수 기록이 모두 초기화됩니다. 변경하시겠습니까?")) {
@@ -401,12 +463,7 @@
             STATE.teams = [];
             STATE.nextCourt = 1; 
             clearSelection();
-            STATE.participants.forEach(p => {
-                p.hasTeam = false;
-                p.totalPoints = 0;
-                p.matchesPlayed = 0;
-                p.eliminated = false;
-            });
+            recalculateStats();
 
             const isTeamMode = (STATE.mode === 'team_league');
             document.getElementById('teamSection').style.display = isTeamMode ? 'flex' : 'none';
@@ -434,7 +491,6 @@
             }
         }
 
-        // 라운드 로빈 방식으로 자동 코트 번호 추출
         function getNextAutoCourt() {
             const court = STATE.nextCourt;
             STATE.nextCourt = (STATE.nextCourt % STATE.totalCourts) + 1;
@@ -488,7 +544,6 @@
                     p1.hasTeam = true;
                     p2.hasTeam = true;
 
-                    // 팀 갯수 기준으로 n조 이름 부여
                     const newGroupNum = STATE.teams.length + 1;
                     STATE.teams.push({
                         id: `t_${STATE.teamIdCounter++}`,
@@ -532,7 +587,6 @@
 
                 while (available.length >= 4) {
                     const group = available.splice(0, 4);
-                    // 라운드/조 이름 자동 부여 (입력칸에 값이 있으면 '입력값 n조', 없으면 'n조')
                     const matchRoundName = roundPrefix ? `${roundPrefix} ${createdCount+1}조` : `${createdCount+1}조`;
                     
                     STATE.matches.push({
@@ -543,7 +597,7 @@
                         t2p1Id: group[1].id,
                         t2p2Id: group[2].id,
                         round: matchRoundName,
-                        court: getNextAutoCourt(), // 자동 코트 배정 적용
+                        court: getNextAutoCourt(), 
                         score1: 0,
                         score2: 0,
                         completed: false
@@ -560,10 +614,24 @@
         }
 
         function deleteMatch(matchId) {
-            if(!confirm("이 대진표를 삭제하시겠습니까?\n삭제된 대진의 선수들은 다시 대기 명단으로 돌아갑니다.")) return;
+            if(!confirm("이 대진표/기록을 삭제하시겠습니까?\n진행 및 기록된 데이터가 취소되며 선수는 대기 명단으로 돌아갑니다.")) return;
             STATE.matches = STATE.matches.filter(m => m.id !== matchId);
+            recalculateStats();
             renderAll();
             showMessage("대진표가 삭제되었습니다.");
+        }
+        
+        function revertScore(matchId) {
+            if(!confirm("이 경기의 결과 기록을 취소하고 다시 대기 상태로 되돌리시겠습니까?")) return;
+            const match = STATE.matches.find(m => m.id === matchId);
+            if(match) {
+                match.completed = false;
+                match.score1 = 0;
+                match.score2 = 0;
+                recalculateStats();
+                renderAll();
+                showMessage("결과가 취소되어 대기 상태로 변경되었습니다.", "success");
+            }
         }
 
         function togglePlayerSelection(id) {
@@ -681,7 +749,7 @@
         function createMatch() {
             const round = document.getElementById('roundInput').value || "일반경기";
             let court = document.getElementById('courtInput').value;
-            if (!court) court = getNextAutoCourt(); // 빈칸 시 자동 배정 적용
+            if (!court) court = getNextAutoCourt(); 
 
             if (STATE.mode === 'team_league') {
                 if (STATE.selectedTeams.length !== 2) {
@@ -712,7 +780,7 @@
             }
 
             clearSelection();
-            document.getElementById('courtInput').value = ''; // 다음 생성을 위해 비워줌
+            document.getElementById('courtInput').value = ''; 
             renderAll();
             showMessage(`[${round}] 대진표가 코트 ${court}에 추가되었습니다.`, "success");
         }
@@ -734,7 +802,7 @@
                             t1Id: STATE.teams[i].id,
                             t2Id: STATE.teams[j].id,
                             round: `${baseRound}`,
-                            court: getNextAutoCourt(), // 자동 코트 배정
+                            court: getNextAutoCourt(), 
                             score1: 0, score2: 0, completed: false
                         });
                         addedCount++;
@@ -957,7 +1025,7 @@
                 }
 
                 const card = document.createElement('div');
-                card.className = `border rounded-xl p-3 shadow-sm flex flex-col justify-between ${m.completed ? 'bg-gray-50 border-gray-200 opacity-80' : 'bg-white border-purple-200'}`;
+                card.className = `border rounded-xl p-3 shadow-sm flex flex-col justify-between ${m.completed ? 'bg-gray-50 border-gray-300' : 'bg-white border-purple-200'}`;
                 
                 let content = `
                     <div class="flex justify-between items-center mb-2 px-1">
@@ -968,22 +1036,22 @@
                         <span class="text-[10px] font-bold whitespace-nowrap ml-1 ${m.completed ? 'text-gray-500' : 'text-green-600 animate-pulse'}">${m.completed ? '종료' : '대기중'}</span>
                     </div>
                     
-                    <div class="badminton-court rounded-lg h-28 flex relative mb-3 ${m.completed ? 'grayscale opacity-75' : ''}">
+                    <div class="badminton-court rounded-lg flex relative mb-2 py-2 ${m.completed ? 'brightness-90' : ''}" style="min-height: 100px;">
                         <div class="badminton-line-inner"></div>
                         <div class="badminton-net"></div>
                         
-                        <div class="w-1/2 flex flex-col items-center justify-around z-20 text-white p-1 relative">
-                            ${m.completed && m.score1 > m.score2 ? '<div class="absolute top-0 left-1 text-yellow-300 text-[10px] font-bold drop-shadow"><i class="fa-solid fa-crown"></i> WIN</div>' : ''}
+                        <div class="w-1/2 flex flex-col items-center justify-center z-20 text-white p-2 relative gap-1">
+                            ${m.completed && m.score1 > m.score2 ? '<div class="text-yellow-300 text-[10px] font-bold drop-shadow leading-none mb-1"><i class="fa-solid fa-crown"></i> WIN</div>' : ''}
                             <div class="font-bold text-sm truncate w-full text-center drop-shadow-md">${name1}</div>
                             <div class="text-[11px] font-bold truncate w-full text-center opacity-90">${detail1}</div>
-                            ${m.completed ? `<div class="absolute inset-0 flex items-center justify-center"><div class="text-4xl font-black text-yellow-300 drop-shadow-[0_2px_2px_rgba(0,0,0,0.8)] leading-none">${m.score1}</div></div>` : ''}
+                            ${m.completed ? `<div class="text-3xl font-black text-yellow-300 drop-shadow-[0_2px_2px_rgba(0,0,0,0.8)] leading-none mt-2">${m.score1}</div>` : ''}
                         </div>
                         
-                        <div class="w-1/2 flex flex-col items-center justify-around z-20 text-white p-1 relative">
-                            ${m.completed && m.score2 > m.score1 ? '<div class="absolute top-0 right-1 text-yellow-300 text-[10px] font-bold drop-shadow"><i class="fa-solid fa-crown"></i> WIN</div>' : ''}
+                        <div class="w-1/2 flex flex-col items-center justify-center z-20 text-white p-2 relative gap-1">
+                            ${m.completed && m.score2 > m.score1 ? '<div class="text-yellow-300 text-[10px] font-bold drop-shadow leading-none mb-1"><i class="fa-solid fa-crown"></i> WIN</div>' : ''}
                             <div class="font-bold text-sm truncate w-full text-center drop-shadow-md">${name2}</div>
                             <div class="text-[11px] font-bold truncate w-full text-center opacity-90">${detail2}</div>
-                            ${m.completed ? `<div class="absolute inset-0 flex items-center justify-center"><div class="text-4xl font-black text-yellow-300 drop-shadow-[0_2px_2px_rgba(0,0,0,0.8)] leading-none">${m.score2}</div></div>` : ''}
+                            ${m.completed ? `<div class="text-3xl font-black text-yellow-300 drop-shadow-[0_2px_2px_rgba(0,0,0,0.8)] leading-none mt-2">${m.score2}</div>` : ''}
                         </div>
                     </div>
                 `;
@@ -1002,13 +1070,23 @@
                             </button>
                         </div>
                     `;
+                } else {
+                    content += `
+                        <div class="flex gap-1.5 pt-2 border-t border-gray-200">
+                            <button onclick="revertScore(${m.id})" class="flex-1 bg-gray-100 hover:bg-gray-200 text-gray-700 py-1.5 rounded text-[11px] font-bold transition flex items-center justify-center gap-1">
+                                <i class="fa-solid fa-rotate-left"></i> 결과 취소
+                            </button>
+                            <button onclick="deleteMatch(${m.id})" class="flex-1 bg-red-50 hover:bg-red-100 text-red-600 py-1.5 rounded text-[11px] font-bold transition flex items-center justify-center gap-1">
+                                <i class="fa-solid fa-trash"></i> 기록 삭제
+                            </button>
+                        </div>
+                    `;
                 }
                 card.innerHTML = content;
                 listEl.appendChild(card);
             });
         }
 
-        // 4. 순위표 (팀 단위 OR 개인 단위 자동 스위칭)
         function renderLeaderboard() {
             const body = document.getElementById('leaderboardBody');
             const title = document.getElementById('standingsTitle');
@@ -1021,68 +1099,64 @@
                 title.innerHTML = '<i class="fa-solid fa-trophy text-yellow-500"></i> 조별 리그 순위 (팀 점수)';
                 headerName.innerText = '팀(조) 명';
                 dataList = [...STATE.teams];
-                
-                const sorted = dataList.sort((a, b) => b.totalPoints - a.totalPoints || b.matchesPlayed - a.matchesPlayed);
-                sorted.forEach((t, index) => {
-                    if (t.matchesPlayed === 0 && t.totalPoints === 0) return; 
-                    
-                    let rankIcon = `${index + 1}`;
-                    if (index === 0) rankIcon = '<i class="fa-solid fa-medal text-yellow-400 text-lg"></i>';
-                    else if (index === 1) rankIcon = '<i class="fa-solid fa-medal text-gray-400 text-lg"></i>';
-                    else if (index === 2) rankIcon = '<i class="fa-solid fa-medal text-orange-400 text-lg"></i>';
-
-                    body.innerHTML += `
-                        <tr class="hover:bg-gray-50">
-                            <td class="px-2 py-2 whitespace-nowrap font-bold">${rankIcon}</td>
-                            <td class="px-2 py-2 whitespace-nowrap font-bold text-xs">${t.name}</td>
-                            <td class="px-2 py-2 whitespace-nowrap text-gray-500 text-[10px]">${t.p1.name}, ${t.p2.name}</td>
-                            <td class="px-2 py-2 whitespace-nowrap text-gray-500 text-[11px]">${t.matchesPlayed}</td>
-                            <td class="px-2 py-2 whitespace-nowrap font-black text-blue-600 text-sm">${t.totalPoints}</td>
-                        </tr>
-                    `;
-                });
-
             } else {
                 headerName.innerText = '이름';
                 if (STATE.mode === 'tournament') {
-                    title.innerHTML = '<i class="fa-solid fa-sitemap text-yellow-500"></i> 개인 토너먼트 생존자';
-                    dataList = STATE.participants.filter(p => !p.eliminated);
-                    dataList.forEach((p) => {
-                        body.innerHTML += `
-                            <tr class="hover:bg-gray-50">
-                                <td class="px-2 py-2 whitespace-nowrap"><span class="bg-green-100 text-green-800 px-2 py-1 rounded text-[10px] font-bold">생존</span></td>
-                                <td class="px-2 py-2 whitespace-nowrap font-bold text-xs">${p.name}</td>
-                                <td class="px-2 py-2 whitespace-nowrap text-gray-500 text-[11px]">${p.level}</td>
-                                <td class="px-2 py-2 whitespace-nowrap text-gray-500 text-[11px]">${p.matchesPlayed}</td>
-                                <td class="px-2 py-2 whitespace-nowrap text-gray-400 text-[11px]">-</td>
-                            </tr>
-                        `;
-                    });
+                    title.innerHTML = '<i class="fa-solid fa-sitemap text-yellow-500"></i> 토너먼트 생존 현황';
                 } else {
                     title.innerHTML = '<i class="fa-solid fa-trophy text-yellow-500"></i> 개인별 순위 (득점 합산)';
-                    dataList = [...STATE.participants];
-                    const sorted = dataList.sort((a, b) => b.totalPoints - a.totalPoints || b.matchesPlayed - a.matchesPlayed);
-                    
-                    sorted.forEach((p, index) => {
-                        if (p.matchesPlayed === 0 && p.totalPoints === 0) return; 
-                        
-                        let rankIcon = `${index + 1}`;
-                        if (index === 0) rankIcon = '<i class="fa-solid fa-medal text-yellow-400 text-lg"></i>';
-                        else if (index === 1) rankIcon = '<i class="fa-solid fa-medal text-gray-400 text-lg"></i>';
-                        else if (index === 2) rankIcon = '<i class="fa-solid fa-medal text-orange-400 text-lg"></i>';
-
-                        body.innerHTML += `
-                            <tr class="hover:bg-gray-50">
-                                <td class="px-2 py-2 whitespace-nowrap font-bold">${rankIcon}</td>
-                                <td class="px-2 py-2 whitespace-nowrap font-bold text-xs">${p.name}</td>
-                                <td class="px-2 py-2 whitespace-nowrap text-gray-500 text-[11px]">${p.level}</td>
-                                <td class="px-2 py-2 whitespace-nowrap text-gray-500 text-[11px]">${p.matchesPlayed}</td>
-                                <td class="px-2 py-2 whitespace-nowrap font-black text-blue-600 text-sm">${p.totalPoints}</td>
-                            </tr>
-                        `;
-                    });
                 }
+                dataList = [...STATE.participants];
             }
+
+            const sorted = dataList.sort((a, b) => {
+                if (STATE.mode === 'tournament') {
+                    if (a.eliminated !== b.eliminated) return a.eliminated ? 1 : -1;
+                }
+                return b.totalPoints - a.totalPoints || b.matchesPlayed - a.matchesPlayed;
+            });
+            
+            let currentRank = 1;
+
+            sorted.forEach((item, index) => {
+                if (item.matchesPlayed === 0 && item.totalPoints === 0) return; 
+                
+                let rankIcon = `${currentRank}`;
+                let statusBadge = '';
+                
+                if (STATE.mode === 'tournament') {
+                    if (item.eliminated) {
+                        statusBadge = `<span class="bg-red-100 text-red-800 px-1.5 py-0.5 rounded text-[10px] font-bold ml-1">탈락</span>`;
+                        rankIcon = '-';
+                    } else {
+                        statusBadge = `<span class="bg-green-100 text-green-800 px-1.5 py-0.5 rounded text-[10px] font-bold ml-1">생존</span>`;
+                        if (currentRank === 1) rankIcon = '<i class="fa-solid fa-medal text-yellow-400 text-lg"></i>';
+                        else if (currentRank === 2) rankIcon = '<i class="fa-solid fa-medal text-gray-400 text-lg"></i>';
+                        else if (currentRank === 3) rankIcon = '<i class="fa-solid fa-medal text-orange-400 text-lg"></i>';
+                    }
+                } else {
+                    if (currentRank === 1) rankIcon = '<i class="fa-solid fa-medal text-yellow-400 text-lg"></i>';
+                    else if (currentRank === 2) rankIcon = '<i class="fa-solid fa-medal text-gray-400 text-lg"></i>';
+                    else if (currentRank === 3) rankIcon = '<i class="fa-solid fa-medal text-orange-400 text-lg"></i>';
+                }
+
+                if(!item.eliminated) currentRank++;
+
+                const name = item.name;
+                const info = STATE.mode === 'team_league' ? `${item.p1.name}, ${item.p2.name}` : item.level;
+                const points = item.totalPoints;
+                const matches = item.matchesPlayed;
+                
+                body.innerHTML += `
+                    <tr class="hover:bg-gray-50 ${item.eliminated ? 'opacity-50' : ''}">
+                        <td class="px-2 py-2 whitespace-nowrap font-bold">${rankIcon}</td>
+                        <td class="px-2 py-2 whitespace-nowrap font-bold text-xs">${name}${statusBadge}</td>
+                        <td class="px-2 py-2 whitespace-nowrap text-gray-500 text-[11px]">${info}</td>
+                        <td class="px-2 py-2 whitespace-nowrap text-gray-500 text-[11px]">${matches}</td>
+                        <td class="px-2 py-2 whitespace-nowrap font-black text-blue-600 text-sm">${points}</td>
+                    </tr>
+                `;
+            });
 
             if (body.innerHTML === '') {
                  body.innerHTML = '<tr><td colspan="5" class="px-2 py-6 text-gray-400 text-center italic text-xs">순위를 매길 데이터가 없습니다.</td></tr>';
@@ -1173,43 +1247,7 @@
             match.score2 = s2;
             match.completed = true;
 
-            if (match.type === 'team') {
-                const t1 = STATE.teams.find(t => t.id === match.t1Id);
-                const t2 = STATE.teams.find(t => t.id === match.t2Id);
-                
-                t1.matchesPlayed++;
-                t2.matchesPlayed++;
-                
-                // 팀 점수 및 개인 점수 동시 기록
-                t1.totalPoints += s1;
-                t2.totalPoints += s2;
-                t1.p1.totalPoints += s1; t1.p1.matchesPlayed++;
-                t1.p2.totalPoints += s1; t1.p2.matchesPlayed++;
-                t2.p1.totalPoints += s2; t2.p1.matchesPlayed++;
-                t2.p2.totalPoints += s2; t2.p2.matchesPlayed++;
-
-                if (STATE.mode === 'tournament') {
-                    if (s1 > s2) t2.eliminated = true;
-                    else if (s2 > s1) t1.eliminated = true;
-                }
-            } else {
-                const t1p1 = STATE.participants.find(p => p.id === match.t1p1Id);
-                const t1p2 = STATE.participants.find(p => p.id === match.t1p2Id);
-                const t2p1 = STATE.participants.find(p => p.id === match.t2p1Id);
-                const t2p2 = STATE.participants.find(p => p.id === match.t2p2Id);
-
-                t1p1.matchesPlayed++; t1p2.matchesPlayed++;
-                t2p1.matchesPlayed++; t2p2.matchesPlayed++;
-
-                if (STATE.mode === 'individual_points') {
-                    t1p1.totalPoints += s1; t1p2.totalPoints += s1;
-                    t2p1.totalPoints += s2; t2p2.totalPoints += s2;
-                } else if (STATE.mode === 'tournament') {
-                    if (s1 > s2) { t2p1.eliminated = true; t2p2.eliminated = true; } 
-                    else if (s2 > s1) { t1p1.eliminated = true; t1p2.eliminated = true; }
-                }
-            }
-
+            recalculateStats();
             closeModal('scoreModal');
             renderAll();
             showMessage("점수가 반영되었습니다.", "success");
