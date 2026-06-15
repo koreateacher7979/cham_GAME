@@ -399,7 +399,7 @@
             
             STATE.matches = [];
             STATE.teams = [];
-            STATE.nextCourt = 1; // 코트 배정 초기화
+            STATE.nextCourt = 1; 
             clearSelection();
             STATE.participants.forEach(p => {
                 p.hasTeam = false;
@@ -427,7 +427,7 @@
             const val = parseInt(document.getElementById('totalCourtsInput').value);
             if (val > 0) {
                 STATE.totalCourts = val;
-                STATE.nextCourt = 1; // 변경 시 코트 트래커 1번으로 리셋
+                STATE.nextCourt = 1; 
                 showMessage(`구장 운영 코트 수가 ${val}개로 설정되었습니다.`, 'success');
             } else {
                 document.getElementById('totalCourtsInput').value = STATE.totalCourts;
@@ -488,11 +488,13 @@
                     p1.hasTeam = true;
                     p2.hasTeam = true;
 
+                    // 팀 갯수 기준으로 n조 이름 부여
+                    const newGroupNum = STATE.teams.length + 1;
                     STATE.teams.push({
                         id: `t_${STATE.teamIdCounter++}`,
                         p1: p1,
                         p2: p2,
-                        name: `${p1.name}·${p2.name} 조`,
+                        name: `${newGroupNum}조 (${p1.name}·${p2.name})`,
                         matchesPlayed: 0,
                         totalPoints: 0,
                         eliminated: false
@@ -526,10 +528,12 @@
                 available.sort((a, b) => b._tempScore - a._tempScore);
 
                 let createdCount = 0;
-                const roundPrefix = document.getElementById('roundInput').value || "자동대진";
+                const roundPrefix = document.getElementById('roundInput').value;
 
                 while (available.length >= 4) {
                     const group = available.splice(0, 4);
+                    // 라운드/조 이름 자동 부여 (입력칸에 값이 있으면 '입력값 n조', 없으면 'n조')
+                    const matchRoundName = roundPrefix ? `${roundPrefix} ${createdCount+1}조` : `${createdCount+1}조`;
                     
                     STATE.matches.push({
                         id: STATE.matchIdCounter++,
@@ -538,7 +542,7 @@
                         t1p2Id: group[3].id,
                         t2p1Id: group[1].id,
                         t2p2Id: group[2].id,
-                        round: `${roundPrefix} ${createdCount+1}경기`,
+                        round: matchRoundName,
                         court: getNextAutoCourt(), // 자동 코트 배정 적용
                         score1: 0,
                         score2: 0,
@@ -644,11 +648,12 @@
             p1.hasTeam = true;
             p2.hasTeam = true;
 
+            const newGroupNum = STATE.teams.length + 1;
             STATE.teams.push({
                 id: `t_${STATE.teamIdCounter++}`,
                 p1: p1,
                 p2: p2,
-                name: `${p1.name}·${p2.name} 조`,
+                name: `${newGroupNum}조 (${p1.name}·${p2.name})`,
                 matchesPlayed: 0,
                 totalPoints: 0,
                 eliminated: false
