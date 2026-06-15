@@ -277,21 +277,33 @@
         };
 
         async function fetchGoogleSheetData() {
-            const participantUrl = `https://docs.google.com/spreadsheets/d/${SHEET_ID}/gviz/tq?tqx=out:csv&sheet=참가자현황`;
-            const adminUrl = `https://docs.google.com/spreadsheets/d/${SHEET_ID}/gviz/tq?tqx=out:csv&sheet=총현황&range=F2:F2`;
+            // 한글 시트명을 URL 인코딩하여 접근 오류 최소화
+            const pSheetName = encodeURIComponent('참가자현황');
+            const aSheetName = encodeURIComponent('총현황');
+            const participantUrl = `https://docs.google.com/spreadsheets/d/${SHEET_ID}/gviz/tq?tqx=out:csv&sheet=${pSheetName}`;
+            const adminUrl = `https://docs.google.com/spreadsheets/d/${SHEET_ID}/gviz/tq?tqx=out:csv&sheet=${aSheetName}&range=F2:F2`;
 
             try {
                 const pRes = await fetch(participantUrl);
                 if (!pRes.ok) throw new Error('Sheet access denied');
+                
                 const pText = await pRes.text();
+                
+                // 스프레드시트가 비공개일 경우 CSV가 아닌 로그인용 HTML이 반환됨을 감지
+                if (pText.toLowerCase().includes('<!doctype html>')) {
+                    throw new Error('PRIVATE_SHEET');
+                }
+
                 parseParticipantsCSV(pText);
 
                 try {
                     const aRes = await fetch(adminUrl);
                     if (aRes.ok) {
                         const aText = await aRes.text();
-                        const pw = aText.replace(/['"]/g, '').trim();
-                        if (pw) STATE.adminPassword = pw;
+                        if (!aText.toLowerCase().includes('<!doctype html>')) {
+                            const pw = aText.replace(/['"]/g, '').trim();
+                            if (pw) STATE.adminPassword = pw;
+                        }
                     }
                 } catch(e) { console.warn('Admin password fetch failed.'); }
 
@@ -299,13 +311,19 @@
                 document.getElementById('participantList').classList.remove('hidden');
             } catch (error) {
                 console.error("Fetch Error:", error);
-                showMessage("스프레드시트가 비공개 상태이거나 접근할 수 없습니다.", "error");
-                handleEmptyData();
+                if (error.message === 'PRIVATE_SHEET') {
+                    showMessage("스프레드시트가 비공개 상태입니다. 공유 권한을 확인해주세요.", "error");
+                    handleEmptyData("접근 권한 없음 (비공개 시트)");
+                } else {
+                    showMessage("데이터를 불러오지 못했습니다. 주소나 시트명을 확인해주세요.", "error");
+                    handleEmptyData();
+                }
             }
         }
 
         function parseParticipantsCSV(csvText) {
-            const rows = csvText.split('\n').map(row => row.split(',').map(val => val.replace(/^"|"$/g, '').trim()));
+            // \r\n (윈도우 줄바꿈) 및 \n 모두 안전하게 처리
+            const rows = csvText.split(/\r?\n/).map(row => row.split(',').map(val => val.replace(/^"|"$/g, '').trim()));
             STATE.participants = [];
             for (let i = 1; i < rows.length; i++) {
                 const row = rows[i];
@@ -320,10 +338,10 @@
                     });
                 }
             }
-            if(STATE.participants.length === 0) handleEmptyData();
+            if(STATE.participants.length === 0) handleEmptyData("시트에 데이터가 없거나 형식이 맞지 않습니다.");
         }
 
-        function handleEmptyData() {
+        function handleEmptyData(reason = "불러온 명단이 없습니다.") {
             STATE.participants = [];
             document.getElementById('loadingIndicator').classList.add('hidden');
             const listEl = document.getElementById('participantList');
@@ -331,7 +349,7 @@
             listEl.innerHTML = `
                 <div class="text-center text-gray-500 py-6 text-sm">
                     <i class="fa-solid fa-circle-exclamation text-2xl mb-2 text-gray-300"></i><br>
-                    불러온 명단이 없습니다.
+                    ${reason}<br><span class="text-[10px] opacity-70">구글 시트 '공유' 옵션에서 '링크가 있는 모든 사용자'로 설정되어 있는지 확인해주세요.</span>
                 </div>
             `;
             document.getElementById('participantCount').innerText = '0명';
